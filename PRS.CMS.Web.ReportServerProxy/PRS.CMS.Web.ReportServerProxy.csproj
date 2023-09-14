@@ -29,8 +29,6 @@
         <AspNetCoreHostingModel>InProcess</AspNetCoreHostingModel>
     </PropertyGroup>
 
-    <Import Project="..\..\..\src.include.props"/>
-
     <PropertyGroup>
         <SignAssembly>false</SignAssembly>
     </PropertyGroup>
@@ -50,6 +48,8 @@
     </PropertyGroup>
 
     <ItemGroup>
+        <PackageReference Include="Microsoft.AspNetCore.Authentication.OpenIdConnect" Version="6.0.21" />
+        <PackageReference Include="Microsoft.AspNetCore.Authentication.Cookies" Version="2.2.0" />
         <PackageReference Include="Yarp.ReverseProxy" Version="2.0.1"/>
     </ItemGroup>
 

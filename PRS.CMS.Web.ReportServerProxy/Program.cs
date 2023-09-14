@@ -17,16 +17,13 @@ app.Run();
 namespace PRS.CMS.Web.ReportServerProxy;
 
 public static class Program
+{
+    public static void Main(string[] args)
     {
-        public static void Main(string[] args)
-        {
-            var hostBuilder = Host.CreateDefaultBuilder(args)
-                .ConfigureWebHostDefaults(webBuilder =>
-                {
-                    webBuilder.UseStartup<Startup>();
-                });
+        var hostBuilder = Host.CreateDefaultBuilder(args)
+            .ConfigureWebHostDefaults(webBuilder => { webBuilder.UseStartup<Startup>(); });
 
-            var host = hostBuilder.Build();
-            host.Run();
-        }
+        var host = hostBuilder.Build();
+        host.Run();
     }
+}

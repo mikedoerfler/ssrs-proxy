@@ -1,8 +1,6 @@
-﻿using System.Diagnostics;
-using System.Net;
-
+﻿using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Yarp.ReverseProxy.Forwarder;
-using Yarp.ReverseProxy.Transforms;
 
 namespace PRS.CMS.Web.ReportServerProxy;
 
@@ -17,7 +15,45 @@ public class Startup
     /// </summary>
     public void ConfigureServices(IServiceCollection services)
     {
-        services.AddHttpForwarder();
+        services.AddYarp();
+
+        services.AddAuthentication(options =>
+            {
+                options.DefaultScheme = CookieAuthenticationDefaults.AuthenticationScheme;
+                options.DefaultChallengeScheme = OpenIdConnectDefaults.AuthenticationScheme;
+            })
+            .AddCookie(
+                CookieAuthenticationDefaults.AuthenticationScheme,
+                options =>
+                {
+                    // the Microsoft.Owin.Security.DataHandler namespace has the SecureDataFormat and that leads to the
+                    // IDataSerializer, IDataProtector classes that know how to create an Owin compatible Auth Cookie
+                    options.Cookie.Name = "PRS.CMS.Web.ReportServerProxy.Cookies.Auth";
+                    // this would be where our cookie would have to be set to domain so it could
+                    // pass between this app and the ReportServer CustomAuth backend
+                    //options.Cookie.Domain = ".casemax.com"
+                }
+            )
+            .AddOpenIdConnect(OpenIdConnectDefaults.AuthenticationScheme,
+                options =>
+                {
+                    options.Authority = "https://localhost:44302/CMSAuth/";
+
+                    options.ClientId = "EEEAF9FC-FDF4-4BB6-9707-F8ED4F3721BD";
+                    options.ClientSecret = "secret";
+                    options.UsePkce = true;
+                    options.SaveTokens = true;
+
+                    /*
+                     * these are the default values - if we have more than 1 external IdP then we will
+                     * need to set these for each OidClient
+                     *
+                    options.CallbackPath = "/signin-oidc";
+                    options.SignedOutCallbackPath = "signout-callback-oidc";
+                    options.RemoteSignOutPath = "signout-oidc";
+                    */
+                });
+
     }
 
     /// <summary>
@@ -25,63 +61,17 @@ public class Startup
     /// </summary>
     public void Configure(IApplicationBuilder app, IHttpForwarder forwarder)
     {
-        // Configure our own HttpMessageInvoker for outbound calls for proxy operations
-        var httpClient = new HttpMessageInvoker(new SocketsHttpHandler
-        {
-            UseProxy = false,
-            AllowAutoRedirect = false,
-            AutomaticDecompression = DecompressionMethods.None,
-            UseCookies = false,
-            ActivityHeadersPropagator = new ReverseProxyPropagator(DistributedContextPropagator.Current),
-            ConnectTimeout = TimeSpan.FromSeconds(15),
-        });
-
-        // Setup our own request transform class
-        var transformer = new CustomTransformer(); // or HttpTransformer.Default;
-        var requestOptions = new ForwarderRequestConfig
-        {
-            ActivityTimeout = TimeSpan.FromSeconds(100)
-        };
-
         app.UseRouting();
+        app.UseAuthentication();
+        app.UseAuthorization();
+        
+        // for oidc we would add items into here to communicate with CMSAuth to figure out who the end user is
 
         // When using IHttpForwarder for direct forwarding you are responsible for routing, destination discovery, load balancing, affinity, etc..
         // For an alternate example that includes those features see BasicYarpSample.
         app.UseEndpoints(endpoints =>
         {
-            endpoints.Map("/Reports/{**catch-all}", async httpContext =>
-            {
-                var error = await forwarder.SendAsync(httpContext, "http://localhost", httpClient, requestOptions, QueryStringRequestTransform);
-
-                // Check if the proxy operation was successful
-                if (error != ForwarderError.None)
-                {
-                    var errorFeature = httpContext.Features.Get<IForwarderErrorFeature>();
-                    var exception = errorFeature.Exception;
-                }
-            });
-
-            // When using extension methods for registering IHttpForwarder providing configuration, transforms, and HttpMessageInvoker is optional (defaults will be used).
-            endpoints.MapForwarder("/{**catch-all}", "https://example.org", requestOptions, transformer, httpClient);
+            endpoints.MapReverseProxy();
         });
-    }
-
-    private static ValueTask QueryStringRequestTransform(HttpContext context, HttpRequestMessage proxyRequest)
-    {
-        // Customize the query string:
-        var queryContext = new QueryTransformContext(context.Request);
-        queryContext.Collection.Remove("param1");
-        queryContext.Collection["area"] = "xx2";
-
-        // Assign the custom uri. Be careful about extra slashes when concatenating here. RequestUtilities.MakeDestinationAddress is a safe default.
-        proxyRequest.RequestUri = RequestUtilities.MakeDestinationAddress(
-            "http://localhost", 
-            context.Request.Path, 
-            queryContext.QueryString);
-
-        // Suppress the original request header, use the one from the destination Uri.
-        proxyRequest.Headers.Host = null;
-
-        return default;
     }
 }
